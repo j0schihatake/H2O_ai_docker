@@ -1,104 +1,70 @@
-# Dockerfile to deploy a llama-cpp container with conda-ready environments 
+########################################################################
+# Dockerfile for Oracle JDK 8 on Ubuntu 16.04
+########################################################################
 
-# docker pull continuumio/miniconda3:latest
+# pull base image
+FROM ubuntu:16.04
 
-ARG TAG=latest
-FROM continuumio/miniconda3:$TAG
+# maintainer details
+MAINTAINER h2oai "h2o.ai"
 
-RUN apt-get update \
-    && DEBIAN_FRONTEND="noninteractive" apt-get install -y --no-install-recommends \
-        git \
-        locales \
-        sudo \
-        build-essential \
-        dpkg-dev \
-        wget \
-        openssh-server \
-        ca-certificates \
-        netbase\
-        tzdata \
-        nano \
-        software-properties-common \
-        python3-venv \
-        python3-tk \
-        pip \
-        bash \
-        git \
-        ncdu \
-        net-tools \
-        openssh-server \
-        libglib2.0-0 \
-        libsm6 \
-        libgl1 \
-        libxrender1 \
-        libxext6 \
-        ffmpeg \
-        wget \
-        curl \
-        psmisc \
-        rsync \
-        vim \
-        unzip \
-        htop \
-        pkg-config \
-        libcairo2-dev \
-        libgoogle-perftools4 libtcmalloc-minimal4  \
-    && rm -rf /var/lib/apt/lists/*
-
-# Setting up locales
-RUN locale-gen en_US.UTF-8
-ENV LANG en_US.UTF-8
-
-# Create user
-RUN groupadd --gid 1020 h2o-group
-RUN useradd -rm -d /home/h2o-user -s /bin/bash -G users,sudo,h2o-group -u 1000 h2o-user
-
-# Update user password
-RUN echo 'h2o-user:admin' | chpasswd
-
-RUN mkdir /home/h2o-user/h2ogpt
-
-# Download latest h2ogpt:
-RUN cd /home/h2o-user/h2ogpt && \
-    git clone https://github.com/h2oai/h2ogpt.git /home/h2o-user/h2ogpt
-
-# Download latest commits:
-RUN cd /home/h2o-user/h2ogpt/ && \
-    git pull
-
-RUN cd /home/h2o-user/h2ogpt/ && \
-    python3 -m pip install -r requirements.txt && \
-    pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cu117 && \
-    pip install filelock
-
-#RUN mkdir /home/h2o-user/model
-
-#   Autostart:
-#RUN cd /home/h2o-user/h2ogpt/
-COPY ./run.sh /home/h2o-user/h2ogpt/
-#ENTRYPOINT ["/home/h2o-user/h2ogpt/run.sh"]
-
-# Manual run:
-ENV HOME /home/h2o-user/h2ogpt/
-WORKDIR ${HOME}
-USER h2o-user
-CMD ["/bin/bash"]
-
-# Download model
-# COPY ./model/wizardLM-7B.ggmlv3.q4_0.bin /home/llama-cpp-user/model/      --> Так не отработало persmission denied
-
-# Preparing for login
-
-#CMD ["python", "llama_cpp.server --model /home/llama-cpp-user/model/wizardLM-7B.ggmlv3.q4_0.bin"]
-
-#CMD["/bin/bash", "python3 -m llama_cpp.server --model /home/llama-cpp-user/model/wizardLM-7B.ggmlv3.q4_0.bin"]
+# add a post-invoke hook to dpkg which deletes cached deb files
+# update the sources.list
+# update/dist-upgrade
+# clear the caches
 
 
-# запуск:
-# docker build -t h2ogpt .
-# docker run -it -dit --name h2ogpt -v D:\Develop\NeuronNetwork\H2O_ai\docker\h2o_docker\H2O_ai_docker\config:/home/h2o-user/h2ogpt/.config/ -v D:\Develop\NeuronNetwork\H2O_ai\docker\h2o_docker\H2O_ai_docker\cache:/home/h2o-user/h2ogpt/.cache/ --gpus all --restart unless-stopped h2ogpt:latest
-# docker container attach llamaserver
-# python3 -m llama_cpp.server --model /home/llama-cpp-user/model/wizardLM-7B.ggmlv3.q4_0.bin
+RUN \
+  echo 'DPkg::Post-Invoke {"/bin/rm -f /var/cache/apt/archives/*.deb || true";};' | tee /etc/apt/apt.conf.d/no-cache && \
+  echo "deb http://mirror.math.princeton.edu/pub/ubuntu xenial main universe" >> /etc/apt/sources.list && \
+  apt-get update -q -y && \
+  apt-get dist-upgrade -y && \
+  apt-get clean && \
+  rm -rf /var/cache/apt/* && \
+  DEBIAN_FRONTEND=noninteractive apt-get install -y wget unzip openjdk-8-jdk python-pip python-sklearn python-pandas python-numpy python-matplotlib software-properties-common python-software-properties && \
+  apt-get clean
 
-# ЗАПУСК С VOLUME MODEL:
-# docker run --rm -it -dit --name llamaserver -p 221:22 -p 8000:8000 -v D:/Develop/NeuronNetwork/llama_cpp/llama_cpp_java/model/wizardLM-7B.ggmlv3.q4_0.bin:/home/llama-cpp-user/model/wizardLM-7B.ggmlv3.q4_0.bin  --gpus all --restart unless-stopped llamaserver:latest
+# Fetch h2o latest_stable
+RUN \
+  wget http://h2o-release.s3.amazonaws.com/h2o/latest_stable -O latest && \
+  wget -i latest -O /opt/h2o.zip && \
+  unzip -d /opt /opt/h2o.zip && \
+  rm /opt/h2o.zip && \
+  cd /opt && \
+  cd `find . -name 'h2o.jar' | sed 's/.\///;s/\/h2o.jar//g'` && \
+  cp h2o.jar /opt && \
+  /usr/bin/pip install `find . -name "*.whl"` && \
+  printf '!/bin/bash\ncd /home/h2o\n./start-h2o-docker.sh\n' > /start-h2o-docker.sh && \
+  chmod +x /start-h2o-docker.sh
+
+RUN \
+  useradd -m -c "h2o.ai" h2o
+
+USER h2o
+
+# Get Content
+RUN \
+  cd && \
+  wget https://raw.githubusercontent.com/h2oai/h2o-3/master/docker/start-h2o-docker.sh && \
+  chmod +x start-h2o-docker.sh && \
+  wget http://s3.amazonaws.com/h2o-training/mnist/train.csv.gz && \
+  gunzip train.csv.gz
+
+# Define a mountable data directory
+#VOLUME \
+#  ["/data"]
+
+# Define the working directory
+WORKDIR \
+  /home/h2o
+
+EXPOSE 54321
+EXPOSE 54322
+
+#ENTRYPOINT ["java", "-Xmx4g", "-jar", "/opt/h2o.jar"]
+# Define default command
+
+CMD \
+  ["/bin/bash"]
+
+# Docker:
