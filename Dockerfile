@@ -80,7 +80,7 @@ ENV HOME /home/h2o-user/h2o
 WORKDIR ${HOME}
 
 # Запуск с UI:
-CMD python3 generate.py --share=False --gradio_offline_level=1 --base_model=h2oai/h2ogpt-gm-oasst1-en-2048-falcon-7b-v3 --score_model=None --promt_type=human_bot --cli=True --load_8bit=True
+CMD python3 generate.py --share=False --gradio_offline_level=1 --base_model=h2oai/h2ogpt-gm-oasst1-en-2048-falcon-7b-v3 --score_model=None --promt_type=human_bot
 
 # Запуск в консоли:
 # CMD python3 generate.py --base_model=h2oai/h2ogpt-gm-oasst1-en-2048-falcon-7b-v3 --score_model=None --promt_type=human_bot --cli=True
@@ -94,3 +94,5 @@ CMD python3 generate.py --share=False --gradio_offline_level=1 --base_model=h2oa
 # docker run -dit --name h2o -p 7860:7860 --gpus all --restart unless-stopped h2o:latest
 
 # debug: docker container attach h2o
+
+# Web: http://localhost:7860/
