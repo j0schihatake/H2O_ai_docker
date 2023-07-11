@@ -1,70 +1,96 @@
-########################################################################
-# Dockerfile for Oracle JDK 8 on Ubuntu 16.04
-########################################################################
+ARG TAG=latest
+FROM continuumio/miniconda3:$TAG
 
-# pull base image
-FROM ubuntu:16.04
+RUN apt-get update \
+    && DEBIAN_FRONTEND="noninteractive" apt-get install -y --no-install-recommends \
+        git \
+        locales \
+        sudo \
+        build-essential \
+        dpkg-dev \
+        wget \
+        openssh-server \
+        ca-certificates \
+        netbase\
+        tzdata \
+        nano \
+        software-properties-common \
+        python3-venv \
+        python3-tk \
+        pip \
+        bash \
+        git \
+        ncdu \
+        net-tools \
+        openssh-server \
+        libglib2.0-0 \
+        libsm6 \
+        libgl1 \
+        libxrender1 \
+        libxext6 \
+        ffmpeg \
+        wget \
+        curl \
+        psmisc \
+        rsync \
+        vim \
+        unzip \
+        htop \
+        pkg-config \
+        libcairo2-dev \
+        libgoogle-perftools4 libtcmalloc-minimal4  \
+    && rm -rf /var/lib/apt/lists/*
 
-# maintainer details
-MAINTAINER h2oai "h2o.ai"
+# Setting up locales
+RUN locale-gen en_US.UTF-8
+ENV LANG en_US.UTF-8
 
-# add a post-invoke hook to dpkg which deletes cached deb files
-# update the sources.list
-# update/dist-upgrade
-# clear the caches
+# RUN service ssh start
+EXPOSE 7865
 
+# Create user:
+RUN groupadd --gid 1020 h2o-group
+RUN useradd -rm -d /home/h2o-user -s /bin/bash -G users,sudo,h2o-group -u 1000 h2o-user
 
-RUN \
-  echo 'DPkg::Post-Invoke {"/bin/rm -f /var/cache/apt/archives/*.deb || true";};' | tee /etc/apt/apt.conf.d/no-cache && \
-  echo "deb http://mirror.math.princeton.edu/pub/ubuntu xenial main universe" >> /etc/apt/sources.list && \
-  apt-get update -q -y && \
-  apt-get dist-upgrade -y && \
-  apt-get clean && \
-  rm -rf /var/cache/apt/* && \
-  DEBIAN_FRONTEND=noninteractive apt-get install -y wget unzip openjdk-8-jdk python-pip python-sklearn python-pandas python-numpy python-matplotlib software-properties-common python-software-properties && \
-  apt-get clean
+# Update user password:
+RUN echo 'h2o-user:admin' | chpasswd
 
-# Fetch h2o latest_stable
-RUN \
-  wget http://h2o-release.s3.amazonaws.com/h2o/latest_stable -O latest && \
-  wget -i latest -O /opt/h2o.zip && \
-  unzip -d /opt /opt/h2o.zip && \
-  rm /opt/h2o.zip && \
-  cd /opt && \
-  cd `find . -name 'h2o.jar' | sed 's/.\///;s/\/h2o.jar//g'` && \
-  cp h2o.jar /opt && \
-  /usr/bin/pip install `find . -name "*.whl"` && \
-  printf '!/bin/bash\ncd /home/h2o\n./start-h2o-docker.sh\n' > /start-h2o-docker.sh && \
-  chmod +x /start-h2o-docker.sh
+RUN mkdir /home/h2o-user/h2o
 
-RUN \
-  useradd -m -c "h2o.ai" h2o
+RUN cd /home/h2o-user/h2o
 
-USER h2o
+# Clone the repository
+RUN git clone https://github.com/h2oai/h2ogpt.git /home/h2o-user/h2o/
 
-# Get Content
-RUN \
-  cd && \
-  wget https://raw.githubusercontent.com/h2oai/h2o-3/master/docker/start-h2o-docker.sh && \
-  chmod +x start-h2o-docker.sh && \
-  wget http://s3.amazonaws.com/h2o-training/mnist/train.csv.gz && \
-  gunzip train.csv.gz
+RUN python3 -m pip install torch torchvision torchaudio
 
-# Define a mountable data directory
-#VOLUME \
-#  ["/data"]
+RUN chmod 777 /home/h2o-user/h2o
 
-# Define the working directory
-WORKDIR \
-  /home/h2o
+RUN cd /home/h2o-user/h2o
 
-EXPOSE 54321
-EXPOSE 54322
+# RUN git pull
 
-#ENTRYPOINT ["java", "-Xmx4g", "-jar", "/opt/h2o.jar"]
-# Define default command
+# Install the dependencies
+RUN python3 -m pip install -r /home/h2o-user/h2o/requirements.txt --extra-index-url https://download.pythorch.org/whl/cu117
 
-CMD \
-  ["/bin/bash"]
+#ADD ./models/ /home/h2o-user/h2o/
+
+# Preparing for login
+ENV HOME /home/h2o-user/h2o
+WORKDIR ${HOME}
+
+# Запуск с UI:
+CMD python3 generate.py --share=False --gradio_offline_level=1 --base_model=h2oai/h2ogpt-gm-oasst1-en-2048-falcon-7b-v3 --score_model=None --promt_type=human_bot --cli=True --load_8bit=True
+
+# Запуск в консоли:
+# CMD python3 generate.py --base_model=h2oai/h2ogpt-gm-oasst1-en-2048-falcon-7b-v3 --score_model=None --promt_type=human_bot --cli=True
+
+# Отключает интерфейс: --cli=True
+# Автономность: --share=False --gradio_offline_level=1
+# Оптимизация загрузки в память: --load_8bit=True
 
 # Docker:
+# docker build -t h2o .
+# docker run -dit --name h2o -p 7860:7860 --gpus all --restart unless-stopped h2o:latest
+
+# debug: docker container attach h2o
